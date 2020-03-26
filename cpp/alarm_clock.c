@@ -1,7 +1,7 @@
 #include <limits.h>
 #include "alarm_clock.h"
 
-void convert_to_ms_if_set(unsigned long *min_value_ms, unsigned int min_value_sec);
+void maybe_update_min_value_ms(unsigned long *min_value_ms, unsigned int min_value_sec);
 
 unsigned int idt_alarm(const struct alarm_config *alarmConfig, const unsigned int now_sec);
 
@@ -17,28 +17,62 @@ unsigned int zb12_alarm(const struct alarm_config *alarmConfig, const unsigned i
 
 void clear_zb12_flag_if_set(const struct alarm_config *alarmConfig);
 
+// Added seconds to milliseconds conversion function
+unsigned int s_to_ms(unsigned int seconds) {
+    return seconds * 1000;
+}
+
+// Added min function
+unsigned long min(unsigned long a, unsigned long b) {
+    if(a < b)
+        return a;
+    return b;
+}
+
+// Note: functions are semantically pointers, so omitting 'Pointer' in type name
+// E.g, 'puts' is a pointer to a function, and 'puts("hello world")' calls that
+// function. So does pts("hello world") if pts is declared to be a pointer to a function
+typedef unsigned int (*AlarmFunction)(const struct alarm_config*, const unsigned int);
+
 void
-how_long_until_the_next_alarm(struct alarm_config *alarmConfig, const unsigned int now_sec,
+how_long_until_the_next_alarm(struct alarm_config *alarmConfig,
+                              const unsigned int now_sec,
                               unsigned long *min_value_ms) {
 
-    unsigned int (*pointers_to_alarm_functions[6]) (const struct alarm_config*, const unsigned int);
-    pointers_to_alarm_functions[0] = idt_alarm;
-    pointers_to_alarm_functions[1] = p88n_alarm;
-    pointers_to_alarm_functions[2] = time_quota_alarm;
-    pointers_to_alarm_functions[3] = zb12_alarm;
-    pointers_to_alarm_functions[4] = dy9x_alarm;
-    pointers_to_alarm_functions[5] = monitoring_time_alarm;
+    // I cleaned this up slightly by removing the hard-coded "6" in array size,
+    // and using array initializer instead.
+    AlarmFunction alarm_functions[] = {
+        idt_alarm,
+        p88n_alarm,
+        time_quota_alarm,
+        zb12_alarm,
+        dy9x_alarm,
+        monitoring_time_alarm, // comma on last elements Python-style :)
+    };
+
+    // How many alarms are the? Python style CAPITAL_CONSTANT_NAME
+    unsigned int const NUM_FUNCTIONS =
+        sizeof(alarm_functions) / sizeof(alarm_functions[0]);
     
-    unsigned  int smallest = INT_MAX;
-    for (int i = 0; i < 6; ++i) {
-        unsigned int alarm_time = pointers_to_alarm_functions[i](alarmConfig, now_sec);
-        if (alarm_time < smallest) {
-            smallest = alarm_time;
-        }
+    // I added "_s" to smallest to clarify unit
+    // Local convention: _s (variable unit is seconds)
+    //                   _ms (variable unit is milliseconds)
+    unsigned int smallest_s = INT_MAX;
+    for (int i = 0; i < NUM_FUNCTIONS; ++i) {
+        unsigned int alarm_time_s = alarm_functions[i](alarmConfig, now_sec);
+        // Using minimization function for more readability
+        smallest_s = min(alarm_time_s, smallest_s);
     }
 
     clear_zb12_flag_if_set(alarmConfig);
-    convert_to_ms_if_set(min_value_ms, smallest);
+
+    // I refactored this to just be a minimize function.
+    // This is because INT_MAX is 'local knowledge' in this
+    // function, and was spread out into the maybe_update_min_value_ms.
+    // I think this is easier to grokk.
+    if(smallest_s != INT_MAX) {
+        *min_value_ms = min(s_to_ms(smallest_s), *min_value_ms);
+    }
 }
 
 void clear_zb12_flag_if_set(const struct alarm_config *alarmConfig) {
@@ -132,12 +166,14 @@ unsigned int idt_alarm(const struct alarm_config *alarmConfig, const unsigned in
     return time_sec;
 }
 
-void convert_to_ms_if_set(unsigned long *min_value_ms, unsigned int min_value_sec) {
-    if (min_value_sec != INT_MAX) {
-        if (min_value_sec * 1000 < *min_value_ms) {
-            *min_value_ms = min_value_sec * 1000;
-        }
-    }
+
+// Renamed parameters to include 'old' and 'new' semantic
+void maybe_update_min_value_ms(unsigned long *old_min_value_ms, unsigned int new_value_s) {
+    *old_min_value_ms = min(s_to_ms(new_value_s), *old_min_value_ms);
+    // unsigned int new_value_ms = s_to_ms(new_value_s);
+    // if (new_value_ms < *old_min_value_ms) {
+    //     *old_min_value_ms = new_value_ms;
+    // }
 }
 
 bool get_operational_flag_state(struct alarm_config *pAlarmConfig, unsigned int flag) {
