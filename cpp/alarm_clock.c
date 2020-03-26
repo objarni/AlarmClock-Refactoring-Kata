@@ -166,16 +166,6 @@ unsigned int idt_alarm(const struct alarm_config *alarmConfig, const unsigned in
     return time_sec;
 }
 
-
-// Renamed parameters to include 'old' and 'new' semantic
-void maybe_update_min_value_ms(unsigned long *old_min_value_ms, unsigned int new_value_s) {
-    *old_min_value_ms = min(s_to_ms(new_value_s), *old_min_value_ms);
-    // unsigned int new_value_ms = s_to_ms(new_value_s);
-    // if (new_value_ms < *old_min_value_ms) {
-    //     *old_min_value_ms = new_value_ms;
-    // }
-}
-
 bool get_operational_flag_state(struct alarm_config *pAlarmConfig, unsigned int flag) {
     return pAlarmConfig->operational_flags & flag;
 }
